@@ -1,0 +1,59 @@
+name: Frontend CI/CD
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - "frontend/**"
+      - "scripts/**"
+      - ".github/workflows/frontend-ci-cd.yml"
+
+jobs:
+  frontend-deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      AWS_REGION: us-east-1
+      S3_BUCKET: ${{ secrets.FRONTEND_S3_BUCKET }}
+      CLOUDFRONT_DIST_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build React app
+        working-directory: frontend
+        run: npm run build
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Upload build to S3
+        run: |
+          aws s3 sync frontend/build s3://$S3_BUCKET \
+            --delete
+
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id $CLOUDFRONT_DIST_ID \
+            --paths "/*"
+
+      - name: Health check
+        run: |
+          chmod +x scripts/health-check.sh
+          scripts/health-check.sh
+
