@@ -1,0 +1,80 @@
+name: Backend CI/CD
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    env:
+      ECR_REPO_URI: ${{ secrets.ECR_REPO_URI }}
+      EC2_INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+
+    steps:
+    # 1️⃣ Checkout code
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    # 2️⃣ Setup Go
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: 1.25.5
+
+    # 3️⃣ Run Go tests
+    - name: Run Go tests
+      run: |
+        cd backend
+        go test ./...
+
+    # 4️⃣ Trivy filesystem scan
+    - name: Trivy FS Scan
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: fs
+        severity: CRITICAL,HIGH
+
+    # 5️⃣ Build Docker image
+    - name: Build Docker image
+      run: |
+        cd backend
+        docker build -t starttech-backend:${{ github.sha }} .
+
+    # 6️⃣ Trivy Docker image scan
+    - name: Trivy Image Scan
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: starttech-backend:${{ github.sha }}
+        severity: CRITICAL,HIGH
+
+    # 7️⃣ Login to AWS ECR
+    - name: Login to ECR
+      uses: aws-actions/amazon-ecr-login@v2
+
+    # 8️⃣ Push Docker image to ECR
+    - name: Push Docker Image
+      run: |
+        docker tag starttech-backend:${{ github.sha }} $ECR_REPO_URI:latest
+        docker push $ECR_REPO_URI:latest
+
+    # 9️⃣ Deploy to EC2 via SSM + PM2
+    - name: Deploy via SSM
+      run: |
+        aws ssm send-command \
+          --document-name "AWS-RunShellScript" \
+          --targets "Key=instanceIds,Values=$EC2_INSTANCE_ID" \
+          --parameters commands="
+            docker pull $ECR_REPO_URI:latest &&
+            pm2 reload /home/ubuntu/backend/ecosystem.config.js
+          " \
+          --region $AWS_REGION
+
+    # 🔟 Smoke test /health
+    - name: Smoke Test /health
+      run: |
+        EC2_PUBLIC_IP=$(aws ec2 describe-instances --instance-ids $EC2_INSTANCE_ID \
+          --query 'Reservations[0].Instances[0].PublicIpAddress' --output text --region $AWS_REGION)
+        curl -f http://$EC2_PUBLIC_IP:8080/health
+
