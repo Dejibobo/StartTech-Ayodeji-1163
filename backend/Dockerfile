@@ -1,8 +1,12 @@
 FROM node:18
 
 WORKDIR /app
-COPY package.json package-lock.json ./
+COPY package*.json ./
 RUN npm install
 COPY . .
-EXPOSE 3000
+
+# Change exposed port to 80
+EXPOSE 80
+
 CMD ["npm", "start"]
+
