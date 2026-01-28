@@ -1,17 +1,8 @@
-# Builder stage
-FROM golang:1.25.5-alpine AS builder
+FROM node:18
 
 WORKDIR /app
-COPY go.mod go.sum ./
-RUN go mod download
-
+COPY package.json package-lock.json ./
+RUN npm install
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o app
-
-# Final stage
-FROM alpine:3.19
-WORKDIR /app
-COPY --from=builder /app/app .
-EXPOSE 8080
-CMD ["./app"]
-
+EXPOSE 3000
+CMD ["npm", "start"]

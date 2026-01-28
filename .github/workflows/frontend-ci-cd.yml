@@ -2,53 +2,38 @@ name: Frontend CI/CD
 
 on:
   push:
-    branches:
-      - main
     paths:
-      - frontend/**
-      - scripts/**
-      - .github/workflows/frontend-ci-cd.yml
+      - "frontend/**"
+      - ".github/workflows/frontend-ci-cd.yml"
+  pull_request:
+    paths:
+      - "frontend/**"
 
 jobs:
-  frontend-deploy:
+  build-frontend:
     runs-on: ubuntu-latest
-
-    env:
-      AWS_REGION: ${{ secrets.AWS_REGION }}
-      S3_BUCKET: ${{ secrets.S3_BUCKET }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          node-version: 18
 
       - name: Install dependencies
         working-directory: frontend
-        run: npm ci
+        run: npm install
 
-      - name: Build React app
+      - name: Build frontend
         working-directory: frontend
         run: npm run build
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+      - name: Build Docker image
+        working-directory: frontend
+        run: docker build -t starttech-frontend .
 
-      - name: Upload build to S3
-        run: |
-          aws s3 sync frontend/build s3://$S3_BUCKET --delete
+      - name: Frontend build successful
+        run: echo "✅ Frontend CI passed"
 
-      - name: Invalidate CloudFront cache
-        run: |
-          aws cloudfront create-invalidation \
-            --distribution-id ${{ secrets.CLOUDFRONT_DIST_ID }} \
-            --paths "/*"
